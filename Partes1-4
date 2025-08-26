@@ -396,14 +396,14 @@ void loop() {
     segWrite(pinSegG,false); segWrite(pinSegDp,false);
     digWrite(pinDigL,false); digWrite(pinDigM,false); digWrite(pinDigR,false);
 
-    // Timer: 1us/tick, interrupción cada disp_isr_period_us
+    // Timer
     dispTimer = timerBegin(disp_timer_id, disp_timer_presc, true);
     timerAttachInterrupt(dispTimer, &displayIsr, true);
     timerAlarmWrite(dispTimer, disp_isr_period_us, true);
     timerAlarmEnable(dispTimer);
   }
 
-  // Genera decenas/unidades/decimal desde tempC (1 decimal) y actualiza buffer (atómico)
+  // Genera decenas/unidades/decimal desde tempC
   void updateDisplayFromTemp(float tempC) {
     if (isnan(tempC)) {
       noInterrupts();
@@ -413,17 +413,16 @@ void loop() {
       return;
     }
 
-    // Limitar a 0.0 .. 99.9 (3 dígitos)
+    // Limitar de 0.0 a 99.9
     if (tempC < 0.0f)  tempC = 0.0f;
     if (tempC > 99.9f) tempC = 99.9f;
 
-    // Método del esquema: temp*10 → entero → extraer
-    int temp10 = (int)roundf(tempC * 10.0f);   // p.ej. 25.7 → 257
-    int decenas  = temp10 / 100;               // 2
-    temp10      -= decenas * 100;              // 57
-    int unidades = temp10 / 10;                // 5
-    temp10      -= unidades * 10;              // 7
-    int decimal  = temp10;                     // 7
+    int temp10 = (int)roundf(tempC * 10.0f);
+    int decenas  = temp10 / 100;// 2
+    temp10      -= decenas * 100;// 57
+    int unidades = temp10 / 10; // 5
+    temp10      -= unidades * 10;// 7
+    int decimal  = temp10; // 7
 
     // Blank en decenas si <10°C
     uint8_t dL = (((int)roundf(tempC)) < 10) ? 10 : (uint8_t)decenas;
@@ -431,11 +430,11 @@ void loop() {
     uint8_t dR = (uint8_t)decimal;
 
     noInterrupts();
-    dispBuf[0] = dL;            // izquierda
-    dispBuf[1] = dM;            // medio
-    dispBuf[2] = dR;            // derecha
+    dispBuf[0] = dL; 
+    dispBuf[1] = dM;
+    dispBuf[2] = dR;
     dispDp[0]  = false;
-    dispDp[1]  = true;          // punto entre unidades y decimal
+    dispDp[1]  = true;
     dispDp[2]  = false;
     interrupts();
   }
