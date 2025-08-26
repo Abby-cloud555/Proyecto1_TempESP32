@@ -12,6 +12,7 @@
 //******************************************/
 #include <Arduino.h>
 #include <stdint.h>
+#include "config.h" //Librería Adafruit IO y ESP32 WIFI
 
 //******************************************/
 // Definiciones
@@ -72,6 +73,10 @@
   // Multiplexeo
   const uint16_t dispRefreshUsPerDigit = 900;
 
+//PARTE 5 Y 6
+  #define FEED_TEMP_C_NAME "temp_c"
+  #define FEED_SERVO_NAME "servo_angle"
+  #define AIO_MIN_PUBLISH_MS 2500 //LÍMITE
 
 //******************************************/
 // Prototipos de funciones
@@ -92,6 +97,10 @@ float mapTempToDeg(float tempC); //Mapeo
 void initDisplayIsr(); 
 void updateDisplayFromTemp(float tempC);
 
+//Adafruit IO
+void initAdafruitIo(); //WIFI y Ada IO
+void updateAdafruitIoTemp(float tempC); //datos de temperatura
+void updateAdafruitIoServo(float deg); //datos de ángulo de servo
 
 //******************************************/
 // Variables globales
@@ -124,6 +133,13 @@ void updateDisplayFromTemp(float tempC);
     0b1111111, //8
     0b1101111  //9
   };
+
+  //Feeds
+  AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
+  AdafruitIO_Feed *feedTempC   = io.feed(FEED_TEMP_C_NAME);
+  AdafruitIO_Feed *feedServoDeg= io.feed(FEED_SERVO_NAME);
+  static unsigned long lastPublishTempMs  = 0;
+  static unsigned long lastPublishServoMs = 0;
 
 //******************************************/
 // ISRs Rutinas de Interrupcion
@@ -206,6 +222,9 @@ void setup() {
     updateDisplayFromTemp(ultimaTempC);
   }
 
+  //Adafruit IO y WIFI
+  initAdafruitIo();
+
 }
 
 
@@ -218,7 +237,10 @@ void loop() {
     ultimaTempC = tempC;
     actualizarSemaforo(tempC); //Encender LEDs
     updateServoFromTemp(tempC); //Mover servo
-     updateDisplayFromTemp(tempC); //Muestra valor en display
+    updateDisplayFromTemp(tempC); //Muestra valor en display
+    updateAdafruitIoTemp(tempC); //Publicar datos en IO
+    float degForAio = mapTempToDeg(tempC);
+    updateAdafruitIoServo(degForAio);
   }
 }
 
@@ -417,3 +439,44 @@ void loop() {
     dispDp[2]  = false;
     interrupts();
   }
+
+//PARTES 5 Y 6
+  void initAdafruitIo() {
+  Serial.println(F("\n[WiFi] Conectando a Adafruit IO..."));
+  io.connect();
+
+  uint32_t t0 = millis();
+  while (io.status() < AIO_CONNECTED && (millis() - t0) < 20000) {
+    io.run();
+    Serial.print('.');
+    delay(400);
+  }
+  Serial.print(F("\n[AIO] Estado: "));
+  Serial.println(io.statusText());
+  Serial.print(F("[AIO] Feeds listos: "));
+  Serial.print(FEED_TEMP_C_NAME); Serial.print(F(", "));
+  Serial.println(FEED_SERVO_NAME);
+}
+  void updateAdafruitIoTemp(float tempC) {
+    if (isnan(tempC)) return;
+    if (io.status() < AIO_CONNECTED) { io.run(); return; }
+
+    unsigned long now = millis();
+    if (now - lastPublishTempMs < AIO_MIN_PUBLISH_MS) return;
+
+    if (feedTempC->save(tempC)) {
+      lastPublishTempMs = now;
+      Serial.print(F("[AIO] temp_c = ")); Serial.println(tempC, 1);
+    }
+}
+  void updateAdafruitIoServo(float deg) {
+    if (io.status() < AIO_CONNECTED) { io.run(); return; }
+
+    unsigned long now = millis();
+    if (now - lastPublishServoMs < AIO_MIN_PUBLISH_MS) return;
+
+    if (feedServoDeg->save(deg)) {
+      lastPublishServoMs = now;
+      Serial.print(F("[AIO] servo_angle = ")); Serial.println(deg, 1);
+    }
+}
