@@ -1,0 +1,22 @@
+Pseudocódigo Proyecto1_ESP32
+
+INICIO
+  1. INICIAR Serial(115200)
+  2. CONFIGURAR botón como INPUT_PULLUP
+  3. CONFIGURAR leds como OUTPUT y APAGARLOS
+  4. CONFIGURAR ADC del sensor de temperatura con atenuación 11 dB
+  5. SERVO
+     5.1 initServo()
+     5.2 writeServoDeg(90°) // posición inicial
+  6. DISPLAY 7 SEGMENTOS
+     6.1 initDisplayIsr() 
+        6.1.1 Configura pines
+        6.1.2 Crea timer
+        6.1.3 Adjunta displayIsr
+     6.2 IF ultimaTempC es válida → updateDisplayFromTemp(ultimaTempC)
+  7. Wi-Fi + Adafruit IO
+     7.1 initAdafruitIo()
+        7.1.1 Conecta
+        7.1.2 Imprime estado y feeds listos
+FIN INICIO
+
