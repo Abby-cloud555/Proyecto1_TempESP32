@@ -6,17 +6,165 @@ INICIO
   3. CONFIGURAR leds como OUTPUT y APAGARLOS
   4. CONFIGURAR ADC del sensor de temperatura con atenuación 11 dB
   5. SERVO
-     5.1 initServo()
-     5.2 writeServoDeg(90°) // posición inicial
+     - initServo()
+     - writeServoDeg(90°) // posición inicial
   6. DISPLAY 7 SEGMENTOS
-     6.1 initDisplayIsr() 
-        6.1.1 Configura pines
-        6.1.2 Crea timer
-        6.1.3 Adjunta displayIsr
-     6.2 IF ultimaTempC es válida → updateDisplayFromTemp(ultimaTempC)
+     - initDisplayIsr() 
+        - Configura pines
+        - Crea timer
+        - Adjunta displayIsr
+     - IF ultimaTempC es válida → updateDisplayFromTemp(ultimaTempC)
   7. Wi-Fi + Adafruit IO
-     7.1 initAdafruitIo()
-        7.1.1 Conecta
-        7.1.2 Imprime estado y feeds listos
+     - initAdafruitIo()
+        - Conecta
+        - Imprime estado y feeds listos
 FIN INICIO
 
+BUCLE PRINCIPAL
+  1. SI botonPresionadoEdge() retorna TRUE ENTONCES:
+     - tempC leerTemperaturaC(); ultimaTempC tempC
+     - actualizarSemaforo(tempC) -> enciende solo uno: VERDE/AMARILLO/ROJO
+     - updateServoFromTemp(tempC) -> calcula ángulo por mapeo y mueve servo
+     - updateDisplayFromTemp(tempC) -> prepara dígitos XX.X y punto en el medio
+     - updateAdafruitIoTemp(tempC) -> publica a feed temp_c (con rate limit)
+     - degForAio mapTempToDeg(tempC)
+       updateAdafruitIoServo(degForAio) -> publica a feed servo_angle (rate limit)
+FIN BUCLE
+
+ISR
+  1. APAGAR todos los dígitos del display
+  3. LEER codigo ← dispBuf[dispIdx] y dpOn entonces dispDp[dispIdx]
+  4. SI code estpa entre 0 y 9.. ENTONCES:
+     - OBTENER segmentos s y numToSeg[code]
+     - PARA cada segmento y punto:
+       - ESCRIBIR SEG_ON_LEVEL si bit activo; si no, SEG_OFF_LEVEL
+     - ENCENDER solo el dígito seleccionado
+    ELSE:
+     - APAGAR todos los segmentos
+FIN ISR
+
+PROCEDIMIENTO 
+leerTemperaturaC()
+  1. sum_mV 0
+  2. REPETIR adcSamples veces:
+     - sum_mV analogReadMilliVolts(pinLm35)
+     - delayde 2 ms
+  3. prom_mV ← sum_mV -> adcSamples
+  4. tempC ← prom_mV -> 10.0 y LM35 = 10 mV/°C
+  5. IMPRIMIR a Serial
+  6. RETORNAR tempC
+FIN
+
+PROCEDIMIENTO 
+actualizarSemaforo(tempC)
+  1. APAGAR leds
+  2. SI tempC < tGreenMax → ENCENDER led verde
+  3. SI tempC < tYellowMax → ENCENDER amarillo
+  4. ELSE → ENCENDER rojo
+  5. IMPRIMIR color en Serial
+FIN
+
+PROCEDIMIENTO 
+botonPresionadoEdge() // debounce por tiempo
+  1. reading: digitalRead(pinButton)
+  2. SI reading != lastBtnState → tLastDebounce ← millis(), lastBtnState ← reading
+  3. SI millis() - tLastDebounce > debounceMs ENTONCES:
+     - Detectar cambio estable
+     - SI LOW retornar TRUE
+  4. RETORNAR FALSE
+FIN
+
+PROCEDIMIENTO 
+initServo()
+  1. Hacer setup del servo
+  2. ledcAttachPin(servoPin, servoChan)
+FIN
+
+PROCEDIMIENTO 
+updateServoFromTemp(tempC)
+  1. deg: mapTempToDeg(tempC)
+  2. writeServoDeg(deg)
+  3. IMPRIMIR a Serial
+FIN
+
+PROCEDIMIENTO 
+writeServoDeg(deg)
+  1. SATURAR deg a enter 0 y 180 grados
+  2. periodUs ← 20000 // 20 ms (50 Hz)
+  3. duty (us, periodUs, servoResBits)
+  4. ledcWrite(servoChan, duty)
+FIN
+
+PROCEDIMIENTO 
+microsecondsToDuty(us, periodUs, resBits)
+  1. maxDuty 
+  2. duty = (us * maxDuty) / periodUs SATURAR
+  3. RETORNAR duty
+FIN
+
+PROCEDIMIENTO 
+mapTempToDeg(tempC) de verde, amarillo y rojo
+  1. DEFINIR ángulos
+  2. SI tempC < tGreenMax:
+     - MAPEAR lineal a0 a1
+  3. ELSE SI tempC < tYellowMax:
+     - MAPEAR lineal a1 a2
+  4. ELSE:
+     - SI tempC ≥ 35 → RETORNAR a3
+     - MAPEAR lineal a2 a3
+  5. RETORNAR ángulo
+FIN
+
+PROCEDIMIENTO 
+initDisplayIsr()
+  1. CONFIGURAR segmentos y dígitos como OUTPUT
+  2. APAGAR todos segmentos y tdos los dígitos
+  3. CREAR dispTimer = timerBegin(disp_timer_id, disp_timer_presc, true)
+  4. timerAttachInterrupt(dispTimer, displayIsr, true)
+  5. timerAlarmWrite(dispTimer, disp_isr_period_us, true)
+  6. timerAlarmEnable(dispTimer)
+FIN
+
+PROCEDIMIENTO 
+updateDisplayFromTemp(tempC)
+  1. SI tempC es 0:
+     - DESHABILITAR interrupciones
+     - dispBuf {blank, blank, blank} y dispDp {0,0,0}
+     - HABILITAR interrupciones
+     - SALIR
+  2. LIMITAR tempC de 0.0 a 99.9
+  3. temp10 = round(tempC * 10)
+  4. decenas = temp10
+     temp10 = temp10 - decenas*100
+     unidades = temp10
+     decimal = temp10 - unidades*10
+  5. DESHABILITAR interrupciones
+     - dispBuf {dL, dM, dR}
+     - dispDp {false, true, false}
+     - HABILITAR interrupciones
+FIN
+
+PROCEDIMIENTO 
+initAdafruitIo()
+  1. io.connect()
+  2. MIENTRAS io.status() y AIO_CONNECTED
+     - io.run(); delay(400 ms)
+  3. IMPRIMIR io.statusText()
+FIN
+
+PROCEDIMIENTO 
+updateAdafruitIoTemp(tempC)
+  1. SI tempC es 0 → SALIR
+  2. SI io.status() < AIO_CONNECTED entonces io.run() y SALIR
+  3. SI millis() - lastPublishTempMs < AIO_MIN_PUBLISH_MS entonces SALIR
+  4. ok = feedTempC->save(tempC)
+     SI ok = lastPublishTempMs = millis()
+FIN
+
+PROCEDIMIENTO 
+updateAdafruitIoServo(deg)
+  1. SI io.status() < AIO_CONNECTED entonces io.run() y SALIR
+  2. SI millis() - lastPublishServoMs < AIO_MIN_PUBLISH_MS entonces SALIR
+  3. ok = feedServoDeg->save(deg)
+     SI ok = lastPublishServoMs = millis()
+FIN
